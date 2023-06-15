@@ -1,4 +1,4 @@
-import { EntityManager, Repository } from "typeorm";
+import { EntityManager, MoreThan, Repository } from "typeorm";
 import { Cron, CronExpression, Timeout } from '@nestjs/schedule';
 import * as converter from 'json-2-csv';
 import axios from 'axios';
@@ -6,21 +6,25 @@ import axios from 'axios';
 import { Baby } from "./baby.model";
 import { Prediction } from './prediction.model';
 import { User } from './user.model';
+import { PredictionHistory } from "./predictionHistory.model";
 
 import { HttpException, HttpStatus, Injectable, Logger } from "@nestjs/common";
-import { evaluate, getFormPoint, GOAL_GOAL, handleErrorCatch, NO_GOAL_GOAL, OVER_2_POINT_5, UNDER_2_POINT_5 } from "../util/helper";
+import { evaluate, getFormPoint, GOAL_GOAL, handleErrorCatch, NO_GOAL_GOAL, OVER_2_POINT_5, UNDER_2_POINT_5, HOME, AWAY, DRAW } from "../util/helper";
+import { plot, Plot } from 'nodeplotlib';
 
 @Injectable()
 export class PredictionService {
     private babyRepository: Repository<Baby>;
     private predictionRepo: Repository<Prediction>;
     private userRepo: Repository<User>;
+    private predictionHistoryRepo: Repository<PredictionHistory>;
     constructor(
         private readonly entityManager: EntityManager,
     ) {
         this.babyRepository = this.entityManager.getRepository(Baby);
         this.predictionRepo = this.entityManager.getRepository(Prediction);
         this.userRepo = this.entityManager.getRepository(User);
+        this.predictionHistoryRepo = this.entityManager.getRepository(PredictionHistory);
     }
 
     async getUsers() {
@@ -35,16 +39,14 @@ export class PredictionService {
 
     async getStat(home, away, outcome) {
         try {
-            const data = await this.babyRepository.find({
-                where: {
-                    home,
-                    away
-                },
-                order: {
-                    'createAt': 'desc'
-                }
-            });
+            const data = await this.babyRepository
+            .createQueryBuilder('baby')
+            .where(`baby.home = :home`, { home })
+            .andWhere(`baby.away = :away`, { away })
+            .andWhere(`baby.createAt > :date`, { date: '2023-05-25'})
+            .getMany();
 
+            console.log(data, 'Data....')
             let odds = 0;
             switch (outcome) {
                 case GOAL_GOAL:
@@ -57,22 +59,37 @@ export class PredictionService {
                     odds = Number.parseFloat(data[0].under_2);
                     break
                 case NO_GOAL_GOAL:
-                    odds = Number.parseFloat(data[0].gg_odd);
+                    odds = Number.parseFloat(data[0].ng_odd);
                     break
+                case HOME:
+                    odds = Number.parseFloat(data[0].home_odd);
+                case AWAY:
+                    odds = Number.parseFloat(data[0].away_odd);
+                case DRAW:
+                    odds = Number.parseFloat(data[0].draw_odd);
                 default:
                     odds = 1
             }
            
             let outcomeCount = 0;
-            data.forEach((d) => {
+            const profits = [];
+            const weeks = []
+            data.forEach((d, index) => {
+                weeks.unshift(d.createAt);
                 if (evaluate(d.result, outcome)) {
                     outcomeCount+=1;
                 }
+                profits.push((outcomeCount * (odds - 1)) - ((index+1) - outcomeCount))
             });
 
+            const percentageWin = (outcomeCount * (odds - 1)) - (data.length - outcomeCount);
+            const averagePercentageWin = percentageWin/data.length;
             return {
                 probability: outcomeCount/data.length,
-                percentageWin: (outcomeCount * (odds - 1)) - (data.length - outcomeCount)
+                percentageWin,
+                averagePercentageWin,
+                profits,
+                weeks
             } 
         } catch(err) {
             console.log(err.message)
@@ -130,11 +147,12 @@ export class PredictionService {
                         away: p,
                         probability: stat.probability,
                         percentage_win: stat.percentageWin,
+                        average_percentage_win: stat.averagePercentageWin,
                         type: outcome
                     })
                 }
-
                 await Promise.all(rounds.map((round) => this.predictionRepo.save(round)))
+                // await Promise.all(rounds.map((round) => this.predictionHistoryRepo.save(round)))
             }
         } catch(err) {}
     }
@@ -181,9 +199,30 @@ export class PredictionService {
         
     }
 
-    // @Timeout(3000)
+    @Timeout(3000)
     async getBabyData() {
-        console.log(await this.getPredictions(null));
+        const d = await this.getStat('ARS', 'FOR', UNDER_2_POINT_5);
+        console.log(d.profits[d.profits.length - 1], 'Fuck d...');
+        console.log(d.weeks[d.weeks.length - 1], 'Length....');
+        const data: Plot[] = [
+            {
+              x: d.weeks,
+              y: d.profits,
+              type: 'scatter',
+            },
+          ];
+          
+        plot(data);
+        return;
+
+        await Promise.all([
+            this.savePrediction(HOME),
+            this.savePrediction(AWAY),
+            this.savePrediction(DRAW),
+            // this.savePrediction(UNDER_2_POINT_5),
+        ])
+        console.log('Done.....')
+        //console.log(await this.savePrediction(UNDER_2_POINT_5));
     }
 
     async updateAmount(data) {

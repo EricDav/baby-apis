@@ -1,4 +1,4 @@
-import { Column, Entity, PrimaryColumn, UpdateDateColumn, CreateDateColumn, PrimaryGeneratedColumn, Index, OneToOne, JoinTable, JoinColumn } from "typeorm";
+import { Column, Entity, PrimaryColumn, UpdateDateColumn, CreateDateColumn, PrimaryGeneratedColumn, Index, OneToOne, JoinTable, JoinColumn, OneToMany, ManyToMany, ManyToOne } from "typeorm";
 import { Config } from "./config.model";
 
 @Entity({ name: 'users' })
@@ -13,8 +13,7 @@ export class User {
     @Column({ nullable: false })
     password: string;
 
-    @OneToOne(() => Config)
-    @JoinColumn()
+    @ManyToOne((type) => Config)
     config: Config;
 
     @Column({ nullable: false, default: true})

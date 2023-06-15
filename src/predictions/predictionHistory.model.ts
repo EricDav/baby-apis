@@ -1,14 +1,17 @@
-import { Column, Entity, PrimaryColumn, UpdateDateColumn, CreateDateColumn } from "typeorm";
+import { Column, Entity, PrimaryColumn, UpdateDateColumn, CreateDateColumn, PrimaryGeneratedColumn } from "typeorm";
 
-@Entity({ name: 'predictions' })
-export class Prediction {
-    @PrimaryColumn()
+@Entity({ name: 'predictionsHistory' })
+export class PredictionHistory {
+    @PrimaryGeneratedColumn()
+    id: number;
+    
+    @Column({ nullable: false })
     home: string;
 
-    @PrimaryColumn()
+    @Column({ nullable: false })
     away: string;
 
-    @PrimaryColumn()
+    @Column({ nullable: false })
     type: string;
 
     @Column({ type: 'numeric', precision: 15, scale: 7, default: 0.0 })
@@ -16,9 +19,6 @@ export class Prediction {
 
     @Column({ type: 'numeric', precision: 15, scale: 2, default: 0.0 })
     percentage_win: number;
-
-    @Column({ type: 'numeric', precision: 15, scale: 2, default: 0.0 })
-    average_percentage_win: number;
 
     @CreateDateColumn()
     createdAt: Date;
